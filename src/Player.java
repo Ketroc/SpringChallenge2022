@@ -1,5 +1,6 @@
 import java.util.*;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Auto-generated code below aims at helping you parse
@@ -17,6 +18,7 @@ class Player {
     public static int step = 0;
     public static int monsterHp = 1;
     public static boolean didEnemyControlMe;
+    public static boolean isEnemyTripleWind;
 
     public enum Type {
         ME,
@@ -58,7 +60,6 @@ class Player {
 
             //build units lists
             enemyHeroWrap.enemyHeroes.clear();
-            monsterWrap.monsters.clear();
             int numUnits = in.nextInt(); // Amount of heros and monsters you can see
             for (int i = 0; i < numUnits; i++) {
                 int id = in.nextInt(); // Unique identifier
@@ -87,24 +88,29 @@ class Player {
             }
 
             //MAIN LOGIC
+            monsterWrap.updateFoggedMonsters();
             setMonsterHp();
-            System.err.println("MY BASE");
-            System.err.println("=======");
-            System.err.println(myBase);
-            System.err.println("ENEMY BASE");
-            System.err.println("==========");
-            System.err.println(enemyBase);
+            enemyTripleWindToggle();
+            System.err.println("isEnemyTripleWind = " + isEnemyTripleWind);
+//            System.err.println("MY BASE");
+//            System.err.println("=======");
+//            System.err.println(myBase);
+//            System.err.println("ENEMY BASE");
+//            System.err.println("==========");
+//            System.err.println(enemyBase);
+
+            monsterWrap.print();
 
             System.err.println("===> prior to onstepstart");
-            heroWrap.print();
+            //heroWrap.print();
             heroWrap.onStepStart();
 
             System.err.println("===> prior to assign target");
-            heroWrap.print();
+            //heroWrap.print();
             heroWrap.assignTarget();
 
             System.err.println("===> prior to onstepend");
-            heroWrap.print();
+            //heroWrap.print();
             heroWrap.onStepEnd();
 
             System.err.println("===> after onstepend");
@@ -122,6 +128,19 @@ class Player {
                         .map(monster -> monster.hp)
                         .orElse(0)
         );
+    }
+
+    private static void enemyTripleWindToggle() {
+        isEnemyTripleWind = false;
+//        if (enemyHeroWrap.enemyHeroes.stream().anyMatch(enemyHero -> enemyHero.pos.distance(myBase.pos) > 12500)) {
+//            isEnemyTripleWind = false;
+//        }
+//        else if (enemyHeroWrap.enemyHeroes.size() == 0) {
+//            isEnemyTripleWind = false;
+//        }
+//        else if (enemyHeroWrap.enemyHeroes.size() == 3) {
+//            isEnemyTripleWind = enemyHeroWrap.enemyHeroes.stream().allMatch(enemyHero -> enemyHero.pos.distance(myBase.pos) < 11000);
+//        }
     }
 
     public static Type getType(int type) {
@@ -157,9 +176,9 @@ class Player {
             List<Point> middle = new ArrayList<>();
             middle.add(new Point(9500, 6500));
             middle.add(new Point(13000, 2500));
-            middle.add(enemyBaseCenterPos);
-            middle.add(new Point(13000, 2500));
-            middle.add(new Point(9500, 6500));
+//            middle.add(enemyBaseCenterPos);
+//            middle.add(new Point(13000, 2500));
+//            middle.add(new Point(9500, 6500));
             middle.add(enemyBaseCenterPos);
             heroIdlePosList.add(middle);
         }
@@ -183,10 +202,10 @@ class Player {
             List<Point> middle = new ArrayList<>();
             middle.add(new Point(8000, 2000));
             middle.add(new Point(5000, 6500));
-            middle.add(enemyBaseCenterPos);
-            middle.add(new Point(5000, 6500));
-            middle.add(new Point(8000, 2000));
-            middle.add(enemyBaseCenterPos);
+//            middle.add(enemyBaseCenterPos);
+//            middle.add(new Point(5000, 6500));
+//            middle.add(new Point(8000, 2000));
+//            middle.add(enemyBaseCenterPos);
             heroIdlePosList.add(middle);
         }
     }
@@ -225,7 +244,11 @@ class Player {
         }
 
         public boolean isInMyZone() {
-            return isNearBase && pos.distance(myBasePos) < Base.ZONE_RANGE;
+            return isNearBase && myBase.zoneContains(pos);
+        }
+
+        public boolean isInEnemyZone() {
+            return isNearBase && enemyBase.zoneContains(pos);
         }
 
         @Override
@@ -240,11 +263,43 @@ class Player {
 
         ThreatTo threatTo;
         Point vector;
+        int prevVisibleStep;
+        int prevMyControlStep;
+        boolean removeMe;
 
         public Monster(int id, int x, int y, int shieldLife, int isControlled, int health, int vx, int vy, int nearBase, int threatFor) {
             super(id, x, y, shieldLife, isControlled, health, nearBase);
             setThreatTo(threatFor);
             this.vector = new Point(vx, vy);
+            this.prevVisibleStep = step;
+        }
+
+        public void update(int x, int y, int shieldLife, int isControlled, int health, int vx, int vy, int nearBase, int threatFor) {
+            this.pos = new Point(x, y);
+            this.shields = shieldLife;
+            this.isControlled = isControlled == 1;
+            this.hp = health;
+            if (step >= prevMyControlStep + 2) {
+                this.vector = new Point(vx, vy);
+            }
+            this.isNearBase = nearBase == 1;
+            setThreatTo(threatFor);
+            this.prevVisibleStep = step;
+        }
+
+        public void update() {
+            pos = pos.add(vector);
+            if (!pos.isInBounds() ||
+                    pos.isVisible() ||
+                    enemyBase.pos.distance(pos) < Base.SCORE_RANGE) {
+                removeMe = true;
+            }
+            if (enemyBase.zoneContains(pos)) {
+                pos = pos.inBounds();
+                isNearBase = true;
+                threatTo = ThreatTo.ENEMY;
+                vector = pos.getVector(enemyBase.pos, Monster.SPEED);
+            }
         }
 
         public void setThreatTo(int threatFor) {
@@ -264,6 +319,49 @@ class Player {
             return heroWrap.containsTarget(id);
         }
 
+        public void setControlled(Point controlToPos) {
+            prevMyControlStep = step;
+            vector = pos.add(vector).getVector(controlToPos, Monster.SPEED);
+            isControlled = true;
+            threatTo = ThreatTo.ENEMY;
+        }
+
+        private int numStepsToScoreOnMe() {
+            if (!isInMyZone()) {
+                return -1;
+            }
+            Point posStep = pos;
+            int numSteps = 0;
+            while (posStep.distance(myBase.pos) > Base.SCORE_RANGE) {
+                posStep = posStep.add(vector);
+                numSteps++;
+                if (numSteps > 20) {
+                    return -1;
+                }
+            }
+            return numSteps;
+        }
+
+        private int numStepsToScoreOnEnemy() {
+            if (!isInEnemyZone()) {
+                return -1;
+            }
+            Point posStep = pos;
+            int numSteps = 0;
+            while (posStep.distance(enemyBase.pos) > Base.SCORE_RANGE) {
+                posStep = posStep.add(vector);
+                numSteps++;
+                if (numSteps > 20) {
+                    return -1;
+                }
+            }
+            return numSteps;
+        }
+
+        protected Point nextPos() {
+            return pos.add(vector);
+        }
+
         @Override
         public String toString() {
             return "Monster\nthreatTo = " + threatTo +
@@ -275,7 +373,7 @@ class Player {
     public static class Hero extends Unit {
         static int DAMAGE = 2;
         static int SPEED = 800;
-        static int ATTACK_RANGE = 300;
+        static int ATTACK_RANGE = 800;
         static int CONTROL_RANGE = 2199;
         static int SHIELD_RANGE = 2199;
         static int VISION_RANGE = 2199;
@@ -287,6 +385,7 @@ class Player {
         Point idlePos;
         int targetId = -1;
         List<Point> patrolPoints;
+        List<Point> patrolGoalLine = Arrays.asList(myBase.pos, myBase.pos);
         int curPatrolIndex;
         int prevWindFrame;
 
@@ -308,15 +407,76 @@ class Player {
             return idlePos;
         }
 
+        public List<Point> getPatrolPoints() {
+            if (!isEnemyTripleWind) {
+                return patrolPoints;
+            }
+            return patrolGoalLine;
+        }
+
         public Point getInterceptPos(Monster targetMonster) {
+            if (targetMonster.nextPos().distance(pos) < Hero.SPEED) {
+                return calcBestAttackPos(pos, targetMonster.nextPos());
+            }
+
             Point interceptPos = targetMonster.pos;
             Point prevInterceptPos = interceptPos;
-            while (Point.inBounds(interceptPos) &&
+            while (interceptPos.isInBounds() &&
                     pos.distance(interceptPos) / 2 > targetMonster.pos.distance(interceptPos)) {
                 prevInterceptPos = interceptPos;
                 interceptPos = interceptPos.add(targetMonster.vector);
             }
             return prevInterceptPos;
+        }
+
+        public void antiTripleWind() {
+//            //SHIELD up when getting in range
+//            if (shields == 0 && enemyHeroes.stream().anyMatch(enemyHero -> enemyHero.pos.distance(pos) < Hero.WIND_DISTANCE + Hero.SPEED)) {
+//                shield(id, "3x WIND");
+//            }
+
+            //WIND the heroes
+            if (step > prevWindFrame + 1 &&
+                    enemyHeroWrap.enemyHeroes.stream()
+                            .anyMatch(enemyHero -> enemyHero.shields == 0 &&
+                                    enemyHero.pos.distance(pos) < (WIND_RANGE - Hero.SPEED - 2))) {
+                wind(pos.towards(myBase.pos, -WIND_DISTANCE), "D WIND");
+            }
+
+            //SHIELD up partner
+            EnemyHero leadEnemyHero = enemyHeroWrap.getClosest(myBase.pos);
+            Point leadEnemyHeroPos = leadEnemyHero.pos.towards(myBase.pos, 400);
+            Hero heroToShield = heroWrap.myHeroes.stream()
+                    .filter(hero -> hero.shields == 0 &&
+                            hero.pos.distance(pos) < Hero.SHIELD_RANGE &&
+                            hero.pos.distance(leadEnemyHeroPos) < pos.distance(leadEnemyHeroPos))
+                    .min(Comparator.comparing(hero -> hero.pos.distance(leadEnemyHeroPos)))
+                    .orElse(null);
+            if (heroToShield != null) {
+                shield(id, "D PARTNER");
+            }
+
+            //MOVE towards enemy heroes
+            move(leadEnemyHeroPos, leadEnemyHeroPos.toString());
+        }
+
+        private Point calcBestAttackPos(Point heroPos, Point targetPos) {
+            List<Monster> monstersInRange = monsterWrap.monsters.stream()
+                    .filter(monster -> monster.pos.distance(heroPos) < Hero.SPEED + Hero.ATTACK_RANGE + 10)
+                    .filter(monster -> monster.pos.distance(targetPos) < Hero.ATTACK_RANGE * 2)
+                    .collect(Collectors.toList());
+
+            List<Point> samplePosList = pos.getTestPositions(Hero.ATTACK_RANGE);
+            return samplePosList.stream()
+                    .filter(samplePos -> samplePos.isInBounds())
+                    .filter(samplePos -> samplePos.distance(heroPos) < Hero.SPEED)
+                    .max(Comparator.comparing(samplePos ->
+                            monstersInRange.stream()
+                                    .filter(monster -> monster.pos.distance(samplePos) < Hero.ATTACK_RANGE)
+                                    .mapToInt(monster -> (monster.threatTo != ThreatTo.ENEMY ? 20000 : -10000) -
+                                            (int)samplePos.distance(samplePosList.get(0)))
+                                    .sum()))
+                    .orElse(samplePosList.get(0));
         }
 
         public void patrol() {
@@ -331,9 +491,9 @@ class Player {
         }
 
         private void nextPatrolPos() {
-            int numPatrolPoints = (monsterHp < 18) ? 2 : patrolPoints.size();
+            int numPatrolPoints = (monsterHp < 18) ? 2 : getPatrolPoints().size();
             curPatrolIndex = (curPatrolIndex + 1) % numPatrolPoints;
-            idlePos = patrolPoints.get(curPatrolIndex);
+            idlePos = getPatrolPoints().get(curPatrolIndex);
         }
 
 
@@ -385,6 +545,17 @@ class Player {
 
         }
 
+        //17hp = 135mana, 19hp = 85mana, 22hp = 10mana
+        public boolean isControlWorthMana(int monsterHp) {
+            return myBase.mana - 25 * (22 - monsterHp) >= 10;
+        }
+
+        public Monster getFarmingTarget() {
+            return monsterWrap.closestTo(pos,
+                    m -> m.threatTo != ThreatTo.ENEMY &&
+                            getPatrolPoints().stream().anyMatch(patrolPos -> patrolPos.distance(m.nextPos()) < 3500));
+        }
+
         @Override
         public String toString() {
             return "\nidlePos = " + getIdlePos() +
@@ -404,6 +575,19 @@ class Player {
 
         @Override
         public void onStepEnd() {
+            if (isEnemyTripleWind) {
+                Point leadEnemyHero = enemyHeroWrap.getClosest(myBase.pos).pos;
+                int closestHeroId = heroWrap.myHeroes.stream()
+                        .filter(hero -> hero instanceof DefenseHero)
+                        .min(Comparator.comparing(hero -> hero.pos.distance(leadEnemyHero)))
+                        .get().id;
+                if (id == closestHeroId) {
+                    antiTripleWind();
+                    return;
+                }
+                targetId = -1;
+            }
+
             //SHIELD my partner if controlled
             if (myBase.mana >= 10) {
                 Hero controlledHero = heroWrap.getControlledHero(pos, SHIELD_RANGE);
@@ -413,15 +597,26 @@ class Player {
                 }
             }
 
-//            //SHIELD self vs player who uses CONTROL
-//            if (didEnemyControlMe &&
-//                    shields == 0 &&
-//                    enemyBase.mana >= 20 &&
-//                    pos.distance(myBasePos) < 9000 &&
-//                    enemyHeroWrap.isAnyNearby(pos, CONTROL_RANGE + SPEED)) {
-//                shield(id);
-//                return;
-//            }
+            //SHIELD self vs player who uses CONTROL
+            if (didEnemyControlMe &&
+                    shields == 0 &&
+                    myBase.mana > 150 &&
+                    pos.distance(myBasePos) < 8000 &&
+                    enemyHeroWrap.isAnyNearby(pos, CONTROL_RANGE + SPEED)) {
+                shield(id);
+                return;
+            }
+
+            //assist emergency target
+            if (targetId == -1) {
+                Monster scoringMonster = monsterWrap.getScoringMonster();
+                if (scoringMonster != null) {
+                    double monsterDistance = scoringMonster.pos.distance(pos);
+                    if (monsterDistance < 2500) {
+                        targetId = scoringMonster.id;
+                    }
+                }
+            }
 
             //Locked on
             if (targetId != -1) {
@@ -440,16 +635,17 @@ class Player {
 
                 //CONTROL monster
                 if (targetMonster.shields == 0 &&
-                        distanceToBase >= 5000 &&
+                        targetMonster.nextPos().distance(myBasePos) >= 5000 &&
                         targetMonster.pos.distance(pos) <= CONTROL_RANGE &&
-                        myBase.mana > 30 &&
-                        targetMonster.hp > 13 &&
+                        myBase.mana > 20 &&
+                        targetMonster.hp > 15 &&
                         (monsterWrap.numAttackTargetsNearby(getIdlePos(), 4000) > 1 ||
                                 monsterWrap.numAttackTargetsNearby(myBasePos, 5000) > 1)) {
                     Point controlToPos = targetMonster.pos.distance(enemyBasePos) > 7500 ?
                             enemyBase.pickTargetCorner(targetMonster.pos) :
                             enemyBasePos;
                     control(targetId, controlToPos, targetMonster.vector.toString());
+                    targetMonster.setControlled(controlToPos);
                     targetId = -1;
                     return;
                 }
@@ -460,7 +656,7 @@ class Player {
                         myBase.mana >= 10 &&
                         targetMonster.shields == 0 &&
                         targetMonster.threatTo == ThreatTo.ME &&
-                        distanceToBase <= getWindRange() &&
+                        distanceToBase <= getDefensiveWindZone() &&
                         targetMonster.pos.distance(pos) <= WIND_RANGE) {
                     wind(enemyBasePos);
                     return;
@@ -471,21 +667,22 @@ class Player {
                 return;
             }
 
-            //attack nearest neutral monster
-            Monster nearbyMonster = monsterWrap.closestTo(getIdlePos(), 3000, m -> m.threatTo != ThreatTo.ENEMY);
-            if (nearbyMonster != null) {
-                //CONTROL monster
-                if (nearbyMonster.shields == 0 &&
-                        nearbyMonster.hp > 15 &&
-                        myBase.mana > 80 &&
-                        nearbyMonster.pos.distance(pos) <= CONTROL_RANGE &&
-                        monsterWrap.numAttackTargetsNearby(getIdlePos(), 3000) > 1) {
-                    Point controlToPos = nearbyMonster.pos.distance(enemyBasePos) > 7500 ?
-                            enemyBase.pickTargetCorner(nearbyMonster.pos) :
+            //CONTROL neutral monster
+            if (myBase.mana > 50) {
+                Monster controlTarget  = monsterWrap.getControlTarget(this);
+                if (controlTarget != null) {
+                    Point controlToPos = controlTarget.pos.distance(enemyBasePos) > 7500 ?
+                            enemyBase.pickTargetCorner(controlTarget.pos) :
                             enemyBasePos;
-                    control(nearbyMonster.id, controlToPos, nearbyMonster.vector.toString());
+                    control(controlTarget.id, controlToPos);
+                    controlTarget.setControlled(controlToPos);
                     return;
                 }
+            }
+
+            //attack nearest neutral monster
+            Monster nearbyMonster = getFarmingTarget();
+            if (nearbyMonster != null) {
                 move(getInterceptPos(nearbyMonster), "FARM");
                 return;
             }
@@ -494,11 +691,11 @@ class Player {
             patrol();
         }
 
-        private double getWindRange() {
-            return Base.ZONE_RANGE;
-//            return (monsterHp > 14 || enemyHeroWrap.isAnyNearby(pos, 3000)) ?
-//                    Base.ZONE_RANGE :
-//                    Monster.SPEED + Base.SCORE_RANGE;
+        private double getDefensiveWindZone() {
+            //return Base.ZONE_RANGE;
+            return (monsterHp >= 15 || enemyHeroWrap.isAnyNearby(myBase.pos, Base.ZONE_RANGE + 2000)) ?
+                    Base.ZONE_RANGE :
+                    Monster.SPEED + Base.SCORE_RANGE + 100;
         }
 
         @Override
@@ -509,6 +706,8 @@ class Player {
     }
 
     public static class OffenseHero extends Hero {
+        boolean enemyControlsMe;
+
         public OffenseHero(int id, int x, int y, int shieldLife, int isControlled, int health, int nearBase) {
             super(id, x, y, shieldLife, isControlled, health, nearBase);
         }
@@ -528,19 +727,27 @@ class Player {
 
         @Override
         public void onStepEnd() {
-            //WIND packs of offensive monsters
-            if (myBase.mana > 30 &&
-                    step > prevWindFrame + 1 &&
-                    pos.distance(enemyBasePos) < 10000 &&
-                    monsterWrap.numWindTargets(pos) > 3) {
-                System.err.print("Offensive WIND");
-                wind(enemyBasePos);
+            if (isEnemyTripleWind) {
+                antiTripleWind();
+                return;
+            }
+
+            if (isControlled && isFinisherMode()) {
+                enemyControlsMe = true;
+            }
+
+            //SHIELD up when trying to score if opponent using CONTROL
+            if (shields == 0 &&
+                    myBase.mana >= 10 &&
+                    isFinisherMode() &&
+                    enemyHeroWrap.isAnyNearby(pos, Hero.CONTROL_RANGE)) {
+                shield(id);
                 return;
             }
 
             //Create 2+ new threats with WIND
             if (step > prevWindFrame + 1 &&
-                    pos.distance(enemyBasePos) < 10000 &&
+                    pos.distance(enemyBase.pos) < 10000 &&
                     monsterWrap.numWindToEnemyZone(pos) >= 2) {
                 System.err.print("Offensive WIND (make new threats)");
                 wind(enemyBasePos);
@@ -556,9 +763,8 @@ class Player {
             }
 
             //CONTROL enemy heroes
-            if (myBase.mana > 50 &&
-                    enemyBase.pos.distance(pos) < Base.ZONE_RANGE &&
-                    monsterWrap.numMonstersNearby(enemyBasePos, Base.ZONE_RANGE) > 1) {
+            if (enemyBase.zoneContains(pos) &&
+                    monsterWrap.numMonstersNearby(enemyBasePos, Base.ZONE_RANGE / 2) > 1) {
                 EnemyHero enemyHero = enemyHeroWrap.getDeepestEnemyHero(pos, Hero.CONTROL_RANGE);
                 if (enemyHero != null) {
                     control(enemyHero.id, pos.towards(enemyBasePos, -VISION_RANGE), "Dance, minion!");
@@ -566,7 +772,7 @@ class Player {
                 }
             }
 
-            //Locked on
+            //defending
             if (targetId != -1) {
                 Monster targetMonster = monsterWrap.get(targetId);
                 double distanceToBase = targetMonster.pos.distance(myBasePos);
@@ -575,7 +781,7 @@ class Player {
                 if (targetMonster.shields == 0 &&
                         distanceToBase >= 5000 &&
                         targetMonster.pos.distance(pos) <= CONTROL_RANGE &&
-                        myBase.mana > 30 &&
+                        myBase.mana > 20 &&
                         targetMonster.hp > 13 &&
                         (monsterWrap.numAttackTargetsNearby(getIdlePos(), 4000) > 1 ||
                                 monsterWrap.numAttackTargetsNearby(myBasePos, 5000) > 1)) {
@@ -583,6 +789,7 @@ class Player {
                             enemyBase.pickTargetCorner(targetMonster.pos) :
                             enemyBasePos;
                     control(targetId, controlToPos, targetMonster.vector.toString());
+                    targetMonster.setControlled(controlToPos);
                     targetId = -1;
                     return;
                 }
@@ -592,40 +799,70 @@ class Player {
                 return;
             }
 
-            //attack nearest neutral monster
-            if ((monsterHp < 18 || myBase.mana < 150) && !isFinisherMode()) {
-                Monster nearbyMonster = monsterWrap.closestTo(getIdlePos(), 3500, m -> m.threatTo != ThreatTo.ENEMY);
-                if (nearbyMonster != null) {
-                    //CONTROL monster
-                    if (nearbyMonster.shields == 0 &&
-                            nearbyMonster.hp > 13 &&
-                            myBase.mana > 70 &&
-                            nearbyMonster.pos.distance(pos) <= CONTROL_RANGE &&
-                            monsterWrap.numAttackTargetsNearby(getIdlePos(), 3500) > 1) {
-                        Point controlToPos = nearbyMonster.pos.distance(enemyBasePos) > 7500 ?
-                                enemyBase.pickTargetCorner(nearbyMonster.pos) :
+            //farming
+            if (!isFinisherMode()) {
+                //CONTROL neutral monster
+                if (myBase.mana > 50) {
+                    Monster controlTarget = monsterWrap.getControlTarget(this);
+                    if (controlTarget != null) {
+                        Point controlToPos = controlTarget.pos.distance(enemyBasePos) > 7500 ?
+                                enemyBase.pickTargetCorner(controlTarget.pos) :
                                 enemyBasePos;
-                        control(nearbyMonster.id, controlToPos, nearbyMonster.vector.toString());
+                        control(controlTarget.id, controlToPos);
+                        controlTarget.setControlled(controlToPos);
                         return;
                     }
+                }
+
+                //attack nearest neutral monster
+                Monster nearbyMonster = getFarmingTarget();
+                if (nearbyMonster != null) {
                     move(getInterceptPos(nearbyMonster), "FARM");
                     return;
                 }
             }
 
             //go to idle position
-            patrol();
+            patrol(isFinisherMode() ? "SCORE" : "PATROL");
         }
 
         public boolean isFinisherMode() {
             return step > 210 ||
                     (myBase.mana >= 20 && myBase.lives <= enemyBase.lives && step > 190) ||
-                    (myBase.mana > 20 && monsterWrap.numMonstersNearby(enemyBasePos, Base.ZONE_RANGE) > 2);
+                    (monsterWrap.numMonstersScorable() > 3);
         }
 
         @Override
         public String toString() {
             return "OffenseHero\n" + super.toString();
+        }
+    }
+
+    public static class MapConstants {
+        public static int MAP_WIDTH = 17630;
+        public static int MAP_HEIGHT = 9000;
+
+        public static Point BASE1 = new Point(0,0);
+        public static Point BASE2 = new Point(MAP_WIDTH,MAP_HEIGHT);
+        public static Point MONSTER_SPAWN1 = new Point(8750,0);
+        public static Point MONSTER_SPAWN2 = new Point(4750, MAP_HEIGHT);
+        public static Point MONSTER_SPAWN3 = new Point(12750,0);
+        public static Point MONSTER_SPAWN4 = new Point(8915, MAP_HEIGHT);
+    }
+
+    public static class AntiTripleWindHero extends Hero {
+        public AntiTripleWindHero(int id, int x, int y, int shieldLife, int isControlled, int health, int nearBase) {
+            super(id, x, y, shieldLife, isControlled, health, nearBase);
+        }
+
+        @Override
+        public void onStepStart() {
+
+        }
+
+        @Override
+        public void onStepEnd() {
+            antiTripleWind();
         }
     }
 
@@ -700,13 +937,62 @@ class Player {
             return normalize(to.subtract(this));
         }
 
-        public static boolean inBounds(Point pos) {
-            return pos.x >= 0 && pos.y >= 0 && pos.x <= 17630 && pos.y <= 9000;
+        public boolean isInBounds() {
+            return x >= 0 && y >= 0 && x <= 17630 && y <= 9000;
         }
 
         public static Point normalize(Point vector) {
             double length = Math.sqrt(vector.x * vector.x + vector.y * vector.y);
             return new Point((vector.x / length), (vector.y / length));
+        }
+
+        public Point getVector(Point targetPos, int speed) {
+            return towards(targetPos, speed).subtract(this);
+        }
+
+        public boolean isVisible() {
+            return distance(myBase.pos) < Base.VISION_RANGE ||
+                    heroWrap.myHeroes.stream().anyMatch(hero -> hero.pos.distance(this) < Hero.VISION_RANGE);
+        }
+
+        public Point inBounds() {
+            return new Point(
+                    Math.min( Math.max(x, 0), 17630),
+                    Math.min( Math.max(y, 0), 9000)
+            );
+        }
+
+        public List<Point> getTestPositions(int range) {
+            ArrayList<Point> posList = new ArrayList<>();
+            posList.add(this);
+            posList.add(this.add(0, range));
+            posList.add(this.add(0, -range));
+            posList.add(this.add(range, 0));
+            posList.add(this.add(-range, 0));
+
+            posList.add(this.add(0, range/2));
+            posList.add(this.add(0, -range/2));
+            posList.add(this.add(range/2, 0));
+            posList.add(this.add(-range/2, 0));
+
+            posList.add(this.towards(this.add(range, range), range-1));
+            posList.add(this.towards(this.add(range, -range), range-1));
+            posList.add(this.towards(this.add(-range, range), range-1));
+            posList.add(this.towards(this.add(-range, -range), range-1));
+
+            posList.add(this.towards(this.add(range, range), range/2));
+            posList.add(this.towards(this.add(range, -range), range/2));
+            posList.add(this.towards(this.add(-range, range), range/2));
+            posList.add(this.towards(this.add(-range, -range), range/2));
+
+            return posList;
+        }
+
+        public Point divide(int divideBy) {
+            if (divideBy == 0) {
+                return this;
+            }
+            return new Point((int)(x/divideBy), (int)(y/divideBy));
         }
 
         @Override
@@ -812,7 +1098,7 @@ class Player {
         public EnemyHero getDeepestEnemyHero(Point pos, int range) {
             return enemyHeroes.stream()
                     .filter(enemyHero -> enemyHero.shields == 0)
-                    .filter(enemyHero -> enemyHero.pos.distance(enemyBasePos) < Base.ZONE_RANGE)
+                    .filter(enemyHero -> enemyBase.zoneContains(enemyHero.pos))
                     .filter(enemyHero -> enemyHero.pos.distance(pos) < range)
                     .min(Comparator.comparing(enemyHero -> enemyHero.pos.distance(enemyBasePos)))
                     .orElse(null);
@@ -820,6 +1106,31 @@ class Player {
 
         public boolean isAnyNearby(Point pos, int range) {
             return enemyHeroes.stream().anyMatch(enemyHero -> enemyHero.pos.distance(pos) <= range);
+        }
+
+        public List<EnemyHero> getNearby(Point pos, int range) {
+            return getNearby(pos, range, enemyHero -> true);
+        }
+
+        public List<EnemyHero> getNearby(Point pos, int range, Predicate<EnemyHero> filter) {
+            return enemyHeroes.stream()
+                    .filter(enemyHero -> enemyHero.pos.distance(pos) <= range)
+                    .filter(filter)
+                    .collect(Collectors.toList());
+        }
+
+        public Point getEnemyHeroesMidPoint() {
+            Point midPoint = new Point(0, 0);
+            for (EnemyHero enemyHero : enemyHeroes) {
+                midPoint = midPoint.add(enemyHero.pos);
+            }
+            return midPoint.divide(enemyHeroes.size());
+        }
+
+        public EnemyHero getClosest(Point pos) {
+            return enemyHeroes.stream()
+                    .min(Comparator.comparing(enemyHero -> enemyHero.pos.distance(pos)))
+                    .orElse(null);
         }
     }
 
@@ -831,7 +1142,19 @@ class Player {
         }
 
         public void add(int id, int x, int y, int shieldLife, int isControlled, int health, int vx, int vy, int nearBase, int threatFor) {
-            monsters.add(new Monster(id, x, y, shieldLife, isControlled, health, vx, vy, nearBase, threatFor));
+            if (contains(id)) {
+                update(id, x, y, shieldLife, isControlled, health, vx, vy, nearBase, threatFor);
+            }
+            else  {
+                monsters.add(new Monster(id, x, y, shieldLife, isControlled, health, vx, vy, nearBase, threatFor));
+            }
+        }
+
+        public void update(int id, int x, int y, int shieldLife, int isControlled, int health, int vx, int vy, int nearBase, int threatFor) {
+            monsters.stream()
+                    .filter(monster -> monster.id == id)
+                    .findFirst()
+                    .ifPresent(monster -> monster.update(x, y, shieldLife, isControlled, health, vx, vy, nearBase, threatFor));
         }
 
         public Monster get(int id) {
@@ -841,6 +1164,9 @@ class Player {
                     .orElse(null);
         }
 
+        public Monster closestTo(Point idlePos, Predicate<Monster> filter) {
+            return closestTo(idlePos, 999999, filter);
+        }
         public Monster closestTo(Point idlePos) {
             return closestTo(idlePos, 999999);
         }
@@ -860,13 +1186,12 @@ class Player {
         public Monster getShieldTargets(Point myHeroPos, int maxRangeToEnemyBase) {
             return monsters.stream()
                     .filter(monster -> monster.shields == 0)
-                    .filter(monster -> monster.hp >= 16)
+                    .filter(monster -> monster.hp >= 18)
                     .filter(monster -> monster.threatTo == ThreatTo.ENEMY)
                     .filter(monster -> monster.pos.distance(myHeroPos) < Hero.SHIELD_RANGE)
                     .filter(monster -> monster.pos.distance(enemyBasePos) < maxRangeToEnemyBase)
                     .min(Comparator.comparing(monster -> monster.pos.distance(enemyBasePos)))
                     .orElse(null);
-
         }
 
         public int numAttackTargetsNearby(Point pos, int range) {
@@ -876,21 +1201,13 @@ class Player {
                     .count();
         }
 
-        public int numWindTargets(Point heroPos) {
-            Point windAddition = heroPos.unitVector(enemyBasePos).multiply(Hero.WIND_DISTANCE);
+        public int numWindToEnemyZone(Point heroPos) {
+            Point windVector = heroPos.unitVector(enemyBasePos).multiply(Hero.WIND_DISTANCE);
             return (int)monsters.stream()
                     .filter(monster -> monster.shields == 0)
                     .filter(monster -> monster.pos.distance(heroPos) < Hero.WIND_RANGE)
-                    .filter(monster -> monster.pos.add(windAddition).distance(enemyBasePos) < Base.ZONE_RANGE + 1000)
-                    .count();
-        }
-
-        public int numWindToEnemyZone(Point heroPos) {
-            Point windAddition = heroPos.unitVector(enemyBasePos).multiply(Hero.WIND_DISTANCE);
-            return (int)monsters.stream()
-                    .filter(monster -> monster.shields == 0)
                     .filter(monster -> monster.threatTo != ThreatTo.ENEMY && !monster.isNearBase)
-                    .filter(monster -> monster.pos.add(windAddition).distance(enemyBasePos) < Base.ZONE_RANGE)
+                    .filter(monster -> enemyBase.zoneContains(monster.pos.add(windVector)))
                     .count();
         }
 
@@ -900,10 +1217,44 @@ class Player {
                     .count();
         }
 
+        public int numMonstersScorable() {
+            return (int)monsters.stream()
+                    .filter(monster -> monster.threatTo == ThreatTo.ENEMY)
+                    .filter(monster -> monster.pos.distance(enemyBase.pos) <= Base.ZONE_RANGE + 1000)
+                    .count();
+        }
+
         public Monster getScoringMonster() {
             return monsters.stream()
                     .filter(monster -> monster.threatTo == ThreatTo.ME && monster.isInMyZone())
                     .min(Comparator.comparing(monster -> monster.pos.distance(myBasePos)))
+                    .orElse(null);
+        }
+
+        public void print() {
+            //monsters.forEach(monster -> System.out.println(monster));
+            System.err.println("MONSTERS");
+            System.err.println("========");
+            monsters.forEach(monster -> System.err.println("id: " + monster.id +
+                    " pos: " + monster.pos +
+                    " vector: " + monster.vector +
+                    " isControlled: " + monster.isControlled
+            ));
+        }
+
+        public void updateFoggedMonsters() {
+            monsters.stream()
+                    .filter(monster -> monster.prevVisibleStep < step)
+                    .forEach(monster -> monster.update());
+            monsters.removeIf(monster -> monster.removeMe);
+        }
+
+        public Monster getControlTarget(Hero hero) {
+            return monsters.stream()
+                    .filter(monster -> monster.shields == 0 && monster.threatTo != ThreatTo.ENEMY)
+                    .filter(monster -> hero.isControlWorthMana(monster.hp))
+                    .filter(monster -> monster.pos.distance(hero.pos) <= Hero.CONTROL_RANGE)
+                    .min(Comparator.comparing(monster -> monster.pos.distance(enemyBase.pos)))
                     .orElse(null);
         }
     }
@@ -911,6 +1262,7 @@ class Player {
     public static class Base {
         public static int SCORE_RANGE = 299;
         public static int ZONE_RANGE = 4999;
+        public static int VISION_RANGE = 5999;
         int mana;
         int lives;
         Point pos;
@@ -939,7 +1291,11 @@ class Player {
         }
 
         public Point pickTargetCorner(Point pos) {
-            return pos.distance(corner1) + 2750 < pos.distance(corner2) ? corner1 : corner2;
+            return pos.distance(corner1) + 2800 < pos.distance(corner2) ? corner1 : corner2;
+        }
+
+        public boolean zoneContains(Point p) {
+            return p.distance(pos) < Base.ZONE_RANGE;
         }
 
         @Override
