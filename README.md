@@ -9,7 +9,11 @@ Goal of the game is the control 3 hero units, defending your goal from spiders w
 sample game: https://www.codingame.com/replay/631515206
 
 Code:
+
 -1 file limitation, so heavy inner class usage
+
 -each game frame, read a file with a series of numbers representing the game stat and convert into objects
+
 -hero roles
+
 -point class with coordinate methods like towards, unit vector, distance
